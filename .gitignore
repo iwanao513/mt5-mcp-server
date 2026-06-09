@@ -17,6 +17,7 @@ scripts/_dump_labels.py
 scripts/_live_backtest.py
 scripts/_full_pipeline.py
 scripts/_dump_report.py
+scripts/_clean_check.py
 
 # OS
 Thumbs.db

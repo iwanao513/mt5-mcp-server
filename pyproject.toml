@@ -4,13 +4,31 @@ version = "0.1.0"
 description = "MCP server that automates the MetaTrader 5 Strategy Tester (backtest / optimize)"
 readme = "README.md"
 requires-python = ">=3.10"
+license = "MIT"
+license-files = ["LICENSE"]
+authors = [{ name = "Iwalyze LLC", email = "iwalyzellc@gmail.com" }]
+keywords = ["mcp", "metatrader5", "mt5", "strategy-tester", "backtest", "optimization", "trading", "forex"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Operating System :: Microsoft :: Windows",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Office/Business :: Financial :: Investment",
+    "Intended Audience :: Developers",
+]
 dependencies = [
-    "mcp>=1.2.0",
+    "mcp>=1.2.0,<2",
     "beautifulsoup4>=4.12",
     "lxml>=5.0",
     "psutil>=5.9",
     "pydantic>=2.0",
 ]
+
+[project.urls]
+Homepage = "https://github.com/iwanao513/mt5-mcp-server"
+Repository = "https://github.com/iwanao513/mt5-mcp-server"
+Issues = "https://github.com/iwanao513/mt5-mcp-server/issues"
 
 [project.scripts]
 mt5-mcp-server = "mt5_mcp_server.server:main"
@@ -21,3 +39,6 @@ build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/mt5_mcp_server"]
+
+[tool.hatch.build.targets.sdist]
+include = ["src/mt5_mcp_server", "README.md", "LICENSE"]

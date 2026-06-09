@@ -9,19 +9,29 @@ from __future__ import annotations
 
 import json
 import os
-import winreg
+import sys
 from dataclasses import dataclass
 from pathlib import Path
+
+try:
+    import winreg  # Windows only (the MT5 Strategy Tester is Windows-only)
+except ImportError:
+    winreg = None  # type: ignore
 
 KNOWN_INSTALL_DIRS = [
     r"C:\Program Files\MetaTrader 5",
 ]
 
-_UNINSTALL_HIVES = [
-    (winreg.HKEY_LOCAL_MACHINE, r"SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall"),
-    (winreg.HKEY_LOCAL_MACHINE, r"SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall"),
-    (winreg.HKEY_CURRENT_USER, r"SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall"),
-]
+DEFAULT_CONFIG = {
+    "terminal_path": None,
+    "data_folder": None,
+    "default_deposit": 10000,
+    "default_currency": "USD",
+    "default_leverage": "1:100",
+    "default_model": 1,
+    "backtest_timeout_sec": 1200,
+    "optimization_timeout_sec": 7200,
+}
 
 
 @dataclass
@@ -32,25 +42,48 @@ class Mt5Paths:
     build: str | None
 
 
-def config_file() -> Path:
-    return Path(__file__).resolve().parents[2] / "config" / "mt5_config.json"
+def _uninstall_hives():
+    if winreg is None:
+        return []
+    return [
+        (winreg.HKEY_LOCAL_MACHINE, r"SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall"),
+        (winreg.HKEY_LOCAL_MACHINE, r"SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall"),
+        (winreg.HKEY_CURRENT_USER, r"SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall"),
+    ]
+
+
+def user_config_dir() -> Path:
+    """Per-user config dir: %APPDATA%\\mt5-mcp-server (works after pip install)."""
+    base = os.environ.get("APPDATA") or os.path.expanduser("~")
+    return Path(base) / "mt5-mcp-server"
+
+
+def _config_locations() -> list[Path]:
+    """Config files in priority order (later wins): repo (dev) -> user dir -> $MT5_MCP_CONFIG."""
+    locs: list[Path] = []
+    repo = Path(__file__).resolve().parents[2] / "config"
+    locs += [repo / "mt5_config.json", repo / "mt5_config.local.json"]
+    ud = user_config_dir()
+    locs += [ud / "mt5_config.json", ud / "mt5_config.local.json"]
+    env = os.environ.get("MT5_MCP_CONFIG")
+    if env:
+        locs.append(Path(env))
+    return locs
 
 
 def load_config() -> dict:
-    """Load config/mt5_config.json, then merge config/mt5_config.local.json (gitignored)."""
-    cfg: dict = {}
-    p = config_file()
-    if p.is_file():
+    """Built-in defaults, then merge each config file found (later wins).
+
+    Installed users put overrides in %APPDATA%\\mt5-mcp-server\\mt5_config.json (or .local.json),
+    or set $MT5_MCP_CONFIG to a file path. Missing config is fine — sane defaults apply.
+    """
+    cfg: dict = dict(DEFAULT_CONFIG)
+    for p in _config_locations():
         try:
-            cfg.update(json.loads(p.read_text(encoding="utf-8")))
-        except Exception:
-            pass
-    local = p.with_name("mt5_config.local.json")
-    if local.is_file():
-        try:
-            cfg.update(json.loads(local.read_text(encoding="utf-8")))
-        except Exception:
-            pass
+            if p.is_file():
+                cfg.update(json.loads(p.read_text(encoding="utf-8")))
+        except Exception as e:  # noqa: BLE001
+            print(f"[mt5-mcp] failed to read config {p}: {e}", file=sys.stderr)
     return cfg
 
 
@@ -117,7 +150,11 @@ def find_terminal(hint: str | None = None) -> str:
     if installs:
         return installs[0]
     raise FileNotFoundError(
-        "terminal64.exe not found. Set 'terminal_path' in config/mt5_config.json"
+        "MetaTrader 5 (terminal64.exe) not found. Searched known dirs ("
+        + ", ".join(KNOWN_INSTALL_DIRS)
+        + ") and the Windows registry (incl. broker builds). "
+        "Run list_mt5_terminals() to see detected installs, or set 'terminal_path' to your "
+        "terminal64.exe in %APPDATA%\\mt5-mcp-server\\mt5_config.json (or $MT5_MCP_CONFIG)."
     )
 
 
