@@ -1,0 +1,10 @@
+{
+  "terminal_path": null,
+  "data_folder": null,
+  "default_deposit": 10000,
+  "default_currency": "USD",
+  "default_leverage": "1:100",
+  "default_model": 1,
+  "backtest_timeout_sec": 1200,
+  "optimization_timeout_sec": 7200
+}

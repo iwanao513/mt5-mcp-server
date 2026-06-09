@@ -1,0 +1,10 @@
+{
+  "mcpServers": {
+    "mt5": {
+      "type": "stdio",
+      "command": "C:\\Users\\PCUSER\\Projects\\mt5-mcp-server\\.venv\\Scripts\\mt5-mcp-server.exe",
+      "args": [],
+      "env": {}
+    }
+  }
+}

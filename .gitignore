@@ -1,0 +1,20 @@
+# Python
+.venv/
+__pycache__/
+*.pyc
+*.egg-info/
+build/
+dist/
+.pytest_cache/
+
+# local overrides & generated outputs
+config/mt5_config.local.json
+reports/
+
+# machine-specific dev scripts (hardcoded local report paths)
+scripts/_verify_parser.py
+scripts/_dump_labels.py
+
+# OS
+Thumbs.db
+.DS_Store
