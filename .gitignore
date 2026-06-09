@@ -14,6 +14,7 @@ reports/
 # machine-specific dev scripts (hardcoded local report paths)
 scripts/_verify_parser.py
 scripts/_dump_labels.py
+scripts/_live_backtest.py
 
 # OS
 Thumbs.db

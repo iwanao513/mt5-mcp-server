@@ -37,13 +37,21 @@ def config_file() -> Path:
 
 
 def load_config() -> dict:
+    """Load config/mt5_config.json, then merge config/mt5_config.local.json (gitignored)."""
+    cfg: dict = {}
     p = config_file()
     if p.is_file():
         try:
-            return json.loads(p.read_text(encoding="utf-8"))
+            cfg.update(json.loads(p.read_text(encoding="utf-8")))
         except Exception:
-            return {}
-    return {}
+            pass
+    local = p.with_name("mt5_config.local.json")
+    if local.is_file():
+        try:
+            cfg.update(json.loads(local.read_text(encoding="utf-8")))
+        except Exception:
+            pass
+    return cfg
 
 
 def _iter_uninstall_entries():

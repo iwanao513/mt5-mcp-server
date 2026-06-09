@@ -60,6 +60,13 @@ claude mcp add mt5 -- C:\Users\PCUSER\Projects\mt5-mcp-server\.venv\Scripts\mt5-
 どちらの場合も、そのインストールの**データフォルダ（EA・履歴）は `origin.txt` から自動で紐づく**。
 未指定なら config → 既定パス（`C:\Program Files\MetaTrader 5`）→ レジストリ の順で自動検出。
 
+個人環境の上書きは **`config/mt5_config.local.json`**（gitignore済み）に書くと正本 `mt5_config.json` を汚さない。例:
+```json
+{ "terminal_path": "C:\\Program Files\\FXGT MT5 Terminal\\terminal64.exe" }
+```
+
+> ⚠️ **ヘッドレス・バックテストの前提**: 選んだMT5は対象口座に**ログイン済み**で、テスト銘柄の**履歴がDL済み**である必要がある。未ログイン/履歴なしだとレポートは生成されるが `history_quality=0%`・0トレードの空結果になる（toolはこれを明示）。アクティブに使っている（最近ログイン＆履歴のある）MT5を選ぶこと。
+
 ## 設定（`config/mt5_config.json`）
 
 | キー | 既定 | 説明 |
