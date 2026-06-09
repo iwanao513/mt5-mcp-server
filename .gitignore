@@ -15,6 +15,8 @@ reports/
 scripts/_verify_parser.py
 scripts/_dump_labels.py
 scripts/_live_backtest.py
+scripts/_full_pipeline.py
+scripts/_dump_report.py
 
 # OS
 Thumbs.db

@@ -89,9 +89,18 @@ class OptimizationResult(BaseModel):
     period: str
     columns: list[str]
     total_passes: int
+    qualified_passes: int = Field(description="Passes with Trades >= min_trades (entry-count guarantee)")
+    min_trades: int = 0
     best_params: dict[str, Any] | None
     top: list[dict[str, Any]]
     report_path: str
+
+
+def _pass_trades(p: dict[str, Any]) -> float:
+    try:
+        return float(str(p.get("Trades")).replace(" ", ""))
+    except (TypeError, ValueError):
+        return 0.0
 
 
 # ---------------------------------------------------------------- helpers
@@ -246,6 +255,7 @@ def optimize(
     forward_mode: int = 0,
     forward_date: str | None = None,
     top_n: int = 10,
+    min_trades: int = 0,
     timeout_sec: int | None = None,
     close_running: bool = False,
     terminal_path: str | None = None,
@@ -256,6 +266,8 @@ def optimize(
         param_ranges: {input_name: [min, max, step]} for each optimized parameter.
         criterion: 0=Balance,1=Bal*PF,2=Bal*ExpPayoff,3=(100%-DD)*Bal,4=Bal*Recovery,5=Bal*Sharpe.
         forward_mode: 0=off,1=1/2,2=1/3,3=1/4,4=custom(forward_date). top_n: best passes to return.
+        min_trades: drop passes with fewer than this many trades before ranking
+                    (guarantees enough entries; avoids over-fit on a handful of trades).
     """
     cfg = paths.load_config()
     mt5 = paths.resolve_mt5(terminal_path)
@@ -273,12 +285,15 @@ def optimize(
     report = run_tester(mt5, ini, report_rel, is_optimization=True,
                         timeout=timeout_sec or cfg.get("optimization_timeout_sec", 7200),
                         close_running=close_running)
-    parsed = parse_optimization_xml(report, top_n=top_n)
-    best = _extract_params(parsed["top"][0], parsed["columns"]) if parsed["top"] else None
+    parsed = parse_optimization_xml(report, top_n=10**9)  # all passes, already ranked
+    passes = parsed["top"]
+    qualified = [p for p in passes if _pass_trades(p) >= min_trades] if min_trades > 0 else passes
+    top = qualified[:top_n]
+    best = _extract_params(top[0], parsed["columns"]) if top else None
     return OptimizationResult(
         ea=ea_rel, symbol=symbol, period=period.upper(), columns=parsed["columns"],
-        total_passes=parsed["total_passes"], best_params=best, top=parsed["top"],
-        report_path=report,
+        total_passes=parsed["total_passes"], qualified_passes=len(qualified),
+        min_trades=min_trades, best_params=best, top=top, report_path=report,
     )
 
 
@@ -322,16 +337,21 @@ def full_pipeline(
     criterion: int = 0,
     fixed_inputs: dict[str, Any] | None = None,
     top_n: int = 5,
+    min_trades: int = 0,
     close_running: bool = False,
     terminal_path: str | None = None,
 ) -> dict[str, Any]:
     """Optimize on the in-sample window, then forward-test the best params out-of-sample,
-    and report an overfitting check (OOS profit factor / IS profit factor)."""
+    and report an overfitting check (OOS profit factor / IS profit factor).
+
+    min_trades: require this many trades in-sample (entry-count guarantee) so the chosen
+    parameters are not over-fit to a handful of trades.
+    """
     opt = optimize(
         ea=ea, symbol=symbol, from_date=in_sample_from, to_date=in_sample_to,
         param_ranges=param_ranges, period=period, model=model, criterion=criterion,
-        fixed_inputs=fixed_inputs, top_n=top_n, close_running=close_running,
-        terminal_path=terminal_path,
+        fixed_inputs=fixed_inputs, top_n=top_n, min_trades=min_trades,
+        close_running=close_running, terminal_path=terminal_path,
     )
     if not opt.best_params:
         return {"optimization": opt.model_dump(), "forward": None,
@@ -341,20 +361,32 @@ def full_pipeline(
         inputs={k: v for k, v in opt.best_params.items() if v is not None},
         period=period, model=model, close_running=close_running, terminal_path=terminal_path,
     )
-    is_pf = None
-    for row in opt.top[:1]:
-        is_pf = row.get("Profit Factor")
+    best_row = opt.top[0] if opt.top else {}
+    is_pf = best_row.get("Profit Factor")
+    is_trades = _pass_trades(best_row)
     oos_pf = fwd.metrics.profit_factor
+    oos_trades = fwd.metrics.total_trades
     try:
         ratio = float(oos_pf) / float(is_pf) if is_pf and oos_pf else None
     except (TypeError, ValueError, ZeroDivisionError):
         ratio = None
+    # overfit if OOS PF collapses vs IS, OOS turns unprofitable, or OOS barely trades
+    overfit = bool(
+        (ratio is not None and ratio < 0.5)
+        or (oos_pf is not None and oos_pf < 1.0 and is_pf and float(is_pf) >= 1.2)
+        or (oos_trades is not None and oos_trades < max(10, min_trades / 3))
+    )
     return {
         "best_params": opt.best_params,
-        "in_sample_profit_factor": is_pf,
-        "out_of_sample": fwd.model_dump(),
+        "in_sample": {"profit_factor": is_pf, "trades": is_trades,
+                      "qualified_passes": opt.qualified_passes, "min_trades": min_trades},
+        "out_of_sample": {"profit_factor": oos_pf, "net_profit": fwd.metrics.net_profit,
+                          "trades": oos_trades, "win_rate_pct": fwd.metrics.win_rate_pct,
+                          "report_path": fwd.report_path},
         "oos_to_is_pf_ratio": ratio,
-        "overfit_warning": (ratio is not None and ratio < 0.5),
+        "overfit_warning": overfit,
+        "verdict": ("過剰最適化の疑い（OOSで崩れる）" if overfit
+                    else "OOSでも概ね維持（過剰最適化は低い）"),
         "optimization_report": opt.report_path,
     }
 
