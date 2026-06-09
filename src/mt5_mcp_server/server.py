@@ -120,16 +120,29 @@ def _extract_params(row: dict[str, Any], columns: list[str]) -> dict[str, Any]:
     return {c: row.get(c) for c in columns if c and c not in _OPT_METRIC_COLS}
 
 
+def _config_auth(cfg: dict, login: str | None = None) -> dict[str, str | None]:
+    """Optional headless login from config ([Common] in the .ini). Demo accounts recommended.
+    Put login/password/server in config/mt5_config.local.json (gitignored)."""
+    lg = login or cfg.get("login")
+    pw = cfg.get("password")
+    return {
+        "login": str(lg) if lg not in (None, "") else None,
+        "password": str(pw) if pw not in (None, "") else None,
+        "server": cfg.get("server") or None,
+    }
+
+
 def _backtest(*, ea_rel, symbol, from_date, to_date, period, model, deposit, currency,
               leverage, inputs, login, timeout, close_running,
               terminal_path=None) -> BacktestResult:
+    cfg = paths.load_config()
     mt5 = paths.resolve_mt5(terminal_path)
     runid = uuid.uuid4().hex[:12]
     report_rel = f"mt5_mcp\\{runid}"
     ini = build_ini(
         expert=ea_rel, symbol=symbol, period=period, from_date=from_date, to_date=to_date,
         report_rel=report_rel, deposit=deposit, currency=currency, leverage=leverage,
-        model=model, optimization=0, fixed_inputs=inputs or {}, login=login,
+        model=model, optimization=0, fixed_inputs=inputs or {}, **_config_auth(cfg, login),
     )
     report = run_tester(mt5, ini, report_rel, is_optimization=False,
                         timeout=timeout, close_running=close_running)
@@ -255,7 +268,7 @@ def optimize(
         currency=cfg.get("default_currency", "USD"), leverage=cfg.get("default_leverage", "1:100"),
         model=model, optimization=2, optimization_criterion=criterion,
         forward_mode=forward_mode, forward_date=forward_date,
-        fixed_inputs=fixed_inputs or {}, range_inputs=param_ranges,
+        fixed_inputs=fixed_inputs or {}, range_inputs=param_ranges, **_config_auth(cfg),
     )
     report = run_tester(mt5, ini, report_rel, is_optimization=True,
                         timeout=timeout_sec or cfg.get("optimization_timeout_sec", 7200),

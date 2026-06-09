@@ -65,7 +65,25 @@ claude mcp add mt5 -- C:\Users\PCUSER\Projects\mt5-mcp-server\.venv\Scripts\mt5-
 { "terminal_path": "C:\\Program Files\\FXGT MT5 Terminal\\terminal64.exe" }
 ```
 
-> ⚠️ **ヘッドレス・バックテストの前提**: 選んだMT5は対象口座に**ログイン済み**で、テスト銘柄の**履歴がDL済み**である必要がある。未ログイン/履歴なしだとレポートは生成されるが `history_quality=0%`・0トレードの空結果になる（toolはこれを明示）。アクティブに使っている（最近ログイン＆履歴のある）MT5を選ぶこと。
+> ⚠️ **ヘッドレス・バックテストの前提**: 選んだMT5は対象口座に**ログイン済み**で、テスト銘柄の**履歴がDL済み**である必要がある。未ログイン/履歴なしだとレポートは生成されるが `history_quality=0%`・0トレードの空結果になる（toolはこれを明示）。
+
+### ヘッドレスで自動ログイン（履歴も自動DL）
+
+未ログインのMT5（例: FXGT）を使う場合、`config/mt5_config.local.json`（**gitignore済み**）に**口座情報**を入れると、`.ini` の `[Common]` 経由で起動時に自動ログインし、足りない履歴は初回バックテスト時に自動ダウンロードされる:
+
+```json
+{
+  "terminal_path": "C:\\Program Files\\FXGT MT5 Terminal\\terminal64.exe",
+  "login": 12345678,
+  "password": "あなたのパスワード",
+  "server": "FXGT-Demo"
+}
+```
+
+- **デモ口座を強く推奨**（ライブ口座のパスワードを平文で置かない）。このファイルは `.gitignore` 済みで**絶対にコミットしない**。
+- `server` はMT5のログイン画面に出る正確なサーバ名（例 `FXGT-Demo` / `FXGT-Live`）。
+- 認証情報を置きたくない場合は、**FXGTアプリでログインしたまま**（「パスワード保存」ON）にしておけば、ヘッドレス起動が再接続して履歴をDLする。
+- 初回は履歴DLで時間がかかる（`timeout_sec` を長めに）。
 
 ## 設定（`config/mt5_config.json`）
 
