@@ -146,6 +146,34 @@ def resolve_mt5(terminal_hint: str | None = None) -> Mt5Paths:
     )
 
 
+def list_mt5_installs() -> list[dict]:
+    """All detected MT5 installs (known dirs + registry, incl. broker builds)."""
+    found: list[str] = []
+    for d in KNOWN_INSTALL_DIRS:
+        exe = os.path.join(d, "terminal64.exe")
+        if os.path.isfile(exe):
+            found.append(exe)
+    found += registry_installs()
+
+    out: list[dict] = []
+    seen: set[str] = set()
+    for exe in found:
+        key = os.path.normcase(exe)
+        if key in seen:
+            continue
+        seen.add(key)
+        install = os.path.dirname(exe)
+        data = data_folder_for(install)
+        out.append({
+            "terminal_path": exe,
+            "install_dir": install,
+            "data_folder": data,
+            "build": registry_version(install),
+            "experts_count": len(list_experts(data)) if data else 0,
+        })
+    return out
+
+
 def experts_dir(data_folder: str) -> str:
     return os.path.join(data_folder, "MQL5", "Experts")
 

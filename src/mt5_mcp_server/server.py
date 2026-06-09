@@ -43,6 +43,14 @@ class Mt5Info(BaseModel):
     is_running: bool = Field(description="True if a terminal is already open on this data folder (blocks backtests)")
 
 
+class TerminalInfo(BaseModel):
+    terminal_path: str = Field(description="Pass this as 'terminal_path' to other tools to target this install")
+    install_dir: str
+    data_folder: str | None
+    build: str | None
+    experts_count: int
+
+
 class EaInfo(BaseModel):
     name: str
     rel_path: str = Field(description="Path to pass as 'ea' to run_backtest/optimize")
@@ -113,8 +121,9 @@ def _extract_params(row: dict[str, Any], columns: list[str]) -> dict[str, Any]:
 
 
 def _backtest(*, ea_rel, symbol, from_date, to_date, period, model, deposit, currency,
-              leverage, inputs, login, timeout, close_running) -> BacktestResult:
-    mt5 = paths.resolve_mt5()
+              leverage, inputs, login, timeout, close_running,
+              terminal_path=None) -> BacktestResult:
+    mt5 = paths.resolve_mt5(terminal_path)
     runid = uuid.uuid4().hex[:12]
     report_rel = f"mt5_mcp\\{runid}"
     ini = build_ini(
@@ -135,9 +144,22 @@ def _backtest(*, ea_rel, symbol, from_date, to_date, period, model, deposit, cur
 
 # ---------------------------------------------------------------- tools
 @mcp.tool()
-def mt5_info() -> Mt5Info:
-    """Detect the MetaTrader 5 install, data folder, build, and EA count."""
-    mt5 = paths.resolve_mt5()
+def list_mt5_terminals() -> list[TerminalInfo]:
+    """List all detected MetaTrader 5 installs (incl. broker builds).
+
+    Use a returned terminal_path as the 'terminal_path' argument of the other tools to
+    pick which MT5 to drive. Without it, tools use config/mt5_config.json or auto-detect.
+    """
+    return [TerminalInfo(**i) for i in paths.list_mt5_installs()]
+
+
+@mcp.tool()
+def mt5_info(terminal_path: str | None = None) -> Mt5Info:
+    """Detect the MetaTrader 5 install, data folder, build, and EA count.
+
+    terminal_path: optional terminal64.exe (or its folder) to target a specific install.
+    """
+    mt5 = paths.resolve_mt5(terminal_path)
     experts = paths.list_experts(mt5.data_folder) if mt5.data_folder else []
     return Mt5Info(
         terminal_path=mt5.terminal_path, install_dir=mt5.install_dir,
@@ -147,9 +169,12 @@ def mt5_info() -> Mt5Info:
 
 
 @mcp.tool()
-def list_eas(name_filter: str = "") -> list[EaInfo]:
-    """List compiled EAs (.ex5) under MQL5/Experts. Use rel_path as the 'ea' argument."""
-    mt5 = paths.resolve_mt5()
+def list_eas(name_filter: str = "", terminal_path: str | None = None) -> list[EaInfo]:
+    """List compiled EAs (.ex5) under MQL5/Experts. Use rel_path as the 'ea' argument.
+
+    terminal_path: optional terminal64.exe (or its folder) to target a specific install.
+    """
+    mt5 = paths.resolve_mt5(terminal_path)
     if not mt5.data_folder:
         return []
     return [EaInfo(name=e["name"], rel_path=e["rel_path"])
@@ -171,6 +196,7 @@ def run_backtest(
     login: str | None = None,
     timeout_sec: int | None = None,
     close_running: bool = False,
+    terminal_path: str | None = None,
 ) -> BacktestResult:
     """Run a single backtest and return parsed metrics.
 
@@ -179,15 +205,17 @@ def run_backtest(
         symbol: e.g. 'EURUSD'. from_date/to_date: 'YYYY.MM.DD' or 'YYYY-MM-DD'.
         period: timeframe (M1..MN1). model: 0=every tick,1=1min OHLC,2=open,4=real ticks.
         inputs: fixed EA inputs {name: value}. close_running: close an open MT5 first.
+        terminal_path: optional terminal64.exe (or its folder) to target a specific install
+                       (see list_mt5_terminals). Defaults to config/auto-detect.
     """
     cfg = paths.load_config()
-    mt5 = paths.resolve_mt5()
+    mt5 = paths.resolve_mt5(terminal_path)
     return _backtest(
         ea_rel=_resolve_ea(mt5.data_folder, ea), symbol=symbol, from_date=from_date,
         to_date=to_date, period=period, model=model, deposit=deposit, currency=currency,
         leverage=leverage, inputs=inputs, login=login,
         timeout=timeout_sec or cfg.get("backtest_timeout_sec", 1200),
-        close_running=close_running,
+        close_running=close_running, terminal_path=terminal_path,
     )
 
 
@@ -207,6 +235,7 @@ def optimize(
     top_n: int = 10,
     timeout_sec: int | None = None,
     close_running: bool = False,
+    terminal_path: str | None = None,
 ) -> OptimizationResult:
     """Run a genetic optimization (Optimization=2) and return the best passes.
 
@@ -216,7 +245,7 @@ def optimize(
         forward_mode: 0=off,1=1/2,2=1/3,3=1/4,4=custom(forward_date). top_n: best passes to return.
     """
     cfg = paths.load_config()
-    mt5 = paths.resolve_mt5()
+    mt5 = paths.resolve_mt5(terminal_path)
     ea_rel = _resolve_ea(mt5.data_folder, ea)
     runid = uuid.uuid4().hex[:12]
     report_rel = f"mt5_mcp\\{runid}"
@@ -251,16 +280,18 @@ def run_forward_test(
     model: int = 1,
     timeout_sec: int | None = None,
     close_running: bool = False,
+    terminal_path: str | None = None,
 ) -> BacktestResult:
     """Out-of-sample test: a single backtest with fixed `inputs` (e.g. optimize().best_params)."""
     cfg = paths.load_config()
-    mt5 = paths.resolve_mt5()
+    mt5 = paths.resolve_mt5(terminal_path)
     return _backtest(
         ea_rel=_resolve_ea(mt5.data_folder, ea), symbol=symbol, from_date=from_date,
         to_date=to_date, period=period, model=model,
         deposit=cfg.get("default_deposit", 10000), currency=cfg.get("default_currency", "USD"),
         leverage=cfg.get("default_leverage", "1:100"), inputs=inputs, login=None,
-        timeout=timeout_sec or cfg.get("backtest_timeout_sec", 1200), close_running=close_running,
+        timeout=timeout_sec or cfg.get("backtest_timeout_sec", 1200),
+        close_running=close_running, terminal_path=terminal_path,
     )
 
 
@@ -279,6 +310,7 @@ def full_pipeline(
     fixed_inputs: dict[str, Any] | None = None,
     top_n: int = 5,
     close_running: bool = False,
+    terminal_path: str | None = None,
 ) -> dict[str, Any]:
     """Optimize on the in-sample window, then forward-test the best params out-of-sample,
     and report an overfitting check (OOS profit factor / IS profit factor)."""
@@ -286,6 +318,7 @@ def full_pipeline(
         ea=ea, symbol=symbol, from_date=in_sample_from, to_date=in_sample_to,
         param_ranges=param_ranges, period=period, model=model, criterion=criterion,
         fixed_inputs=fixed_inputs, top_n=top_n, close_running=close_running,
+        terminal_path=terminal_path,
     )
     if not opt.best_params:
         return {"optimization": opt.model_dump(), "forward": None,
@@ -293,7 +326,7 @@ def full_pipeline(
     fwd = run_forward_test(
         ea=ea, symbol=symbol, from_date=out_of_sample_from, to_date=out_of_sample_to,
         inputs={k: v for k, v in opt.best_params.items() if v is not None},
-        period=period, model=model, close_running=close_running,
+        period=period, model=model, close_running=close_running, terminal_path=terminal_path,
     )
     is_pf = None
     for row in opt.top[:1]:

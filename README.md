@@ -13,6 +13,7 @@ AIがMetaTrader 5 の Strategy Tester を自動操作するための **MCPサー
 
 | ツール | 概要 |
 |---|---|
+| `list_mt5_terminals` | 検出した**全MT5インストール**を一覧（ブローカー別）。`terminal_path` を選ぶのに使う |
 | `mt5_info` | MT5本体・データフォルダ・ビルド・EA数・起動中かを検出 |
 | `list_eas` | `MQL5/Experts/` の `.ex5` 一覧（`rel_path` を `ea` に渡す） |
 | `run_backtest` | 単一バックテスト → 純益/PF/DD/勝率/取引数等を返す |
@@ -44,6 +45,20 @@ claude mcp add mt5 -- C:\Users\PCUSER\Projects\mt5-mcp-server\.venv\Scripts\mt5-
 3. `run_backtest(ea="Examples\\Moving Average\\Moving Average.ex5", symbol="EURUSD", from_date="2024.01.01", to_date="2024.06.30", period="H1")`。
 4. `optimize(ea=..., symbol="EURUSD", from_date="2023.01.01", to_date="2024.06.30", param_ranges={"MovingPeriod":[10,40,2],"MovingShift":[0,10,1]})`。
 5. `run_forward_test(ea=..., symbol="EURUSD", from_date="2024.07.01", to_date="2024.12.31", inputs=optimize_best_params)`。
+
+## どのMT5を使うか（複数インストール対応）
+
+ブローカー別に複数のMT5がある場合、対象を**パスで指定**できる（2通り）:
+
+1. **ツール引数 `terminal_path`**（呼び出しごと）: `list_mt5_terminals()` で出た `terminal_path` を
+   `mt5_info` / `list_eas` / `run_backtest` / `optimize` / `run_forward_test` / `full_pipeline` に渡す。
+   例: `run_backtest(ea=..., symbol="USDJPY", from_date="2024.01.01", to_date="2024.06.30",
+   terminal_path="C:\\Program Files\\XMTrading MT5\\terminal64.exe")`。
+   フォルダパスでも可（自動で `terminal64.exe` を補完）。
+2. **既定として固定**: `config/mt5_config.json` の `terminal_path` に terminal64.exe のフルパスを書く。
+
+どちらの場合も、そのインストールの**データフォルダ（EA・履歴）は `origin.txt` から自動で紐づく**。
+未指定なら config → 既定パス（`C:\Program Files\MetaTrader 5`）→ レジストリ の順で自動検出。
 
 ## 設定（`config/mt5_config.json`）
 
