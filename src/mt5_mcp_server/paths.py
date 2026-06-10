@@ -88,7 +88,7 @@ def load_config() -> dict:
 
 
 def _iter_uninstall_entries():
-    for root, sub in _UNINSTALL_HIVES:
+    for root, sub in _uninstall_hives():
         try:
             key = winreg.OpenKey(root, sub)
         except OSError:

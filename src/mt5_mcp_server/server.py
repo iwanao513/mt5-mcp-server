@@ -6,6 +6,7 @@ STDIO RULE: never write to stdout (it corrupts JSON-RPC). All logging goes to st
 """
 from __future__ import annotations
 
+import json
 import logging
 import os
 import sys
@@ -170,9 +171,40 @@ def list_mt5_terminals() -> list[TerminalInfo]:
     """List all detected MetaTrader 5 installs (incl. broker builds).
 
     Use a returned terminal_path as the 'terminal_path' argument of the other tools to
-    pick which MT5 to drive. Without it, tools use config/mt5_config.json or auto-detect.
+    pick which MT5 to drive, or call set_default_terminal to make it the persistent default.
+    Without either, tools use the configured/auto-detected terminal.
     """
     return [TerminalInfo(**i) for i in paths.list_mt5_installs()]
+
+
+@mcp.tool()
+def set_default_terminal(terminal_path: str) -> Mt5Info:
+    """Persist the default MetaTrader 5 terminal so every tool uses it without passing terminal_path.
+
+    Writes terminal_path to the user config (%APPDATA%\\mt5-mcp-server\\mt5_config.json), which
+    overrides auto-detection and survives restarts. Pass a terminal64.exe path (or its folder),
+    e.g. one from list_mt5_terminals(). Returns the now-default MT5 info.
+    """
+    p = os.path.normpath(terminal_path)
+    if os.path.isdir(p):
+        p = os.path.join(p, "terminal64.exe")
+    if not os.path.isfile(p):
+        raise FileNotFoundError(
+            f"terminal64.exe not found at: {p}. Use a path from list_mt5_terminals()."
+        )
+    cfg_dir = paths.user_config_dir()
+    cfg_dir.mkdir(parents=True, exist_ok=True)
+    cfg_path = cfg_dir / "mt5_config.json"
+    data: dict = {}
+    if cfg_path.is_file():
+        try:
+            data = json.loads(cfg_path.read_text(encoding="utf-8"))
+        except Exception:
+            data = {}
+    data["terminal_path"] = p
+    cfg_path.write_text(json.dumps(data, indent=2, ensure_ascii=False), encoding="utf-8")
+    log.info("default terminal set to %s (%s)", p, cfg_path)
+    return mt5_info(terminal_path=p)
 
 
 @mcp.tool()

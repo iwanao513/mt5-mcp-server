@@ -18,6 +18,7 @@ scripts/_live_backtest.py
 scripts/_full_pipeline.py
 scripts/_dump_report.py
 scripts/_clean_check.py
+scripts/_set_default.py
 
 # OS
 Thumbs.db
