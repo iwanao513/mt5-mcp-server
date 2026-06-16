@@ -17,6 +17,7 @@ Claude Code などのMCPクライアントから「このEAをEURUSD H1で2024�
 | `optimize` | 遺伝的最適化 → ベストN・最適パラメータ（`min_trades` で取引数下限） |
 | `run_forward_test` | 固定パラメータでOOS（アウトオブサンプル）テスト |
 | `full_pipeline` | IS最適化 → OOS検証 → 過剰最適化チェックを一括 |
+| `send_to_iwaraizer` | MT5バックテストの全取引明細を岩ライザーFXに渡して分析（keepdata投入） |
 
 ## 必要環境
 
@@ -117,6 +118,19 @@ claude mcp add mt5 -- mt5-mcp-server
 `full_pipeline` は **IS（最適化）/ OOS（検証）期間を分割**し、OOSでPFが崩れる・不採算・取引過少なら `overfit_warning` を立てます。
 `min_trades` で**取引数の下限**を課し、少数のまぐれ当たりに最適化されたパラメータを除外できます。
 最適化するパラメータは**少なく**保つのが安全です。
+
+## 岩ライザーFX（Iwaraizar FX）連携
+
+`send_to_iwaraizer` で、MT5バックテストの**全取引明細**を岩ライザーFXデスクトップアプリに渡して分析できます。
+
+1. `run_backtest(...)` を実行（`report_path` が返る）。
+2. `send_to_iwaraizer(report_path=<その .htm>, title="My EA EURUSD", parameter="MovingPeriod=8; MovingShift=4")`。
+   - レポートの **Deals(約定) テーブルから取引をFIFO再構成**（in/outペア）し、岩ライザーFXの
+     `%APPDATA%\iwaraizar_fx_public\keepdata\Contents.json` に **1データセットとして追記**（`.bak` 自動バックアップ）。
+3. 岩ライザーFX を開く → 追加データセット → 計算実行で チャート/統計（PF/DD/勝率/月別 等）。
+
+- アプリ側は**無改修**（`fs.watch` で自動検知）。`keepdata_dir` 引数で保存先を上書き可。
+- 検証: 146取引の再構成で「最終残高 − 初期残高 = レポート純益」が一致することを確認済み。
 
 ## トラブルシューティング
 

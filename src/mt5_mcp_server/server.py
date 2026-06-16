@@ -16,9 +16,9 @@ from typing import Any
 from mcp.server.fastmcp import FastMCP
 from pydantic import BaseModel, Field
 
-from . import paths
+from . import iwaraizer, paths
 from .ini_builder import build_ini, normalize_date
-from .report_parser import parse_optimization_xml, parse_single_html
+from .report_parser import parse_deals, parse_optimization_xml, parse_single_html
 from .runner import running_terminals_for, run_tester
 
 logging.basicConfig(level=logging.INFO, stream=sys.stderr,
@@ -420,6 +420,47 @@ def full_pipeline(
         "verdict": ("過剰最適化の疑い（OOSで崩れる）" if overfit
                     else "OOSでも概ね維持（過剰最適化は低い）"),
         "optimization_report": opt.report_path,
+    }
+
+
+@mcp.tool()
+def send_to_iwaraizer(
+    report_path: str,
+    title: str | None = None,
+    parameter: str = "",
+    keepdata_dir: str | None = None,
+) -> dict[str, Any]:
+    """Send a finished MT5 backtest's per-trade list to the 岩ライザーFX (Iwaraizar FX) desktop app.
+
+    Parses the report's Deals table into per-trade records and appends them (as a new dataset) to
+    the app's keepdata/Contents.json (a .bak backup is written first). The app file-watches that
+    file and refreshes; then run the app's calculation to get charts/stats.
+
+    Args:
+        report_path: the .htm path returned by run_backtest (its report_path field).
+        title: portfolio name shown in the app (default 'MT5 <symbol> <N>t').
+        parameter: EA parameters string for display, e.g. 'MovingPeriod=8; MovingShift=4'.
+        keepdata_dir: override the app's keepdata folder (default: auto-detect under %APPDATA%).
+    """
+    parsed = parse_deals(report_path)
+    trades = parsed["trades"]
+    if not trades:
+        return {"ok": False, "error": "no trades found in report (deals table missing/empty)",
+                "report_path": report_path}
+    summary = parse_single_html(report_path)
+    sym = parsed["symbol"] or "?"
+    title = title or f"MT5 {sym} {len(trades)}t"
+    element = iwaraizer.to_contents_element(
+        trades=trades, first_equity=parsed["first_equity"], title=title,
+        parameter=parameter, modeling_quality=summary["metrics"].get("history_quality") or "",
+        mode="MT5",
+    )
+    path = iwaraizer.append_to_contents(element, override=keepdata_dir)
+    return {
+        "ok": True, "title": title, "symbol": sym, "trades": len(trades),
+        "first_equity": parsed["first_equity"], "final_balance": trades[-1]["balance"],
+        "keepdata": path,
+        "note": "岩ライザーFXのContentsに追加しました。アプリで再読込→計算実行でチャート/統計が出ます。",
     }
 
 

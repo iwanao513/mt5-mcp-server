@@ -19,6 +19,10 @@ scripts/_full_pipeline.py
 scripts/_dump_report.py
 scripts/_clean_check.py
 scripts/_set_default.py
+scripts/_dump_deals.py
+scripts/_inspect_contents.py
+scripts/_verify_iwaraizer.py
+scripts/_send_live.py
 
 # OS
 Thumbs.db

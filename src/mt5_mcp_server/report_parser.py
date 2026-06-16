@@ -148,6 +148,121 @@ def parse_single_html(path: str) -> dict:
     return {"report_path": path, "metrics": metrics, "raw": pairs}
 
 
+# --- per-trade (deals) extraction --------------------------------------
+
+_DEAL_COLS = {
+    "time": ["時間", "Time"],
+    "symbol": ["銘柄", "Symbol"],
+    "type": ["タイプ", "Type"],
+    "direction": ["新規・決済", "Direction"],
+    "volume": ["数量", "Volume"],
+    "price": ["価格", "Price"],
+    "commission": ["手数料", "Commission"],
+    "swap": ["スワップ", "Swap"],
+    "profit": ["損益", "Profit"],
+    "balance": ["残高", "Balance"],
+}
+
+
+def _deal_colmap(header: list[str]) -> dict[str, int]:
+    idx: dict[str, int] = {}
+    for i, h in enumerate(header):
+        hs = (h or "").strip()
+        for key, labels in _DEAL_COLS.items():
+            if key not in idx and hs in labels:
+                idx[key] = i
+    return idx
+
+
+def parse_deals(path: str) -> dict:
+    """Reconstruct per-trade records from the MT5 report's Deals (約定) table.
+
+    Pairs in/out deals FIFO per symbol. Returns {first_equity, symbol, trades:[...]} where each
+    trade has entry/exit time+price, type (position direction), lot, symbol, profit (net = MT5
+    profit + swap + commission), commission, swap, balance (MT5 running balance), no.
+    """
+    soup = BeautifulSoup(read_report(path), "lxml")
+    tables = soup.find_all("table")
+    if not tables:
+        return {"first_equity": None, "symbol": None, "trades": []}
+    rows = tables[-1].find_all("tr")
+
+    header: list[str] | None = None
+    colmap: dict[str, int] = {}
+    in_deals = False
+    data_rows: list[list[str]] = []
+    for r in rows:
+        cells = [c.get_text(" ", strip=True) for c in r.find_all(["td", "th"])]
+        nonempty = [c for c in cells if c]
+        if len(nonempty) == 1:           # section boundary (注文 / 約定)
+            in_deals = False
+            header = None
+            continue
+        if header is None and len(nonempty) >= 8:
+            cm = _deal_colmap(cells)
+            if {"balance", "direction", "profit"} <= set(cm):
+                header, colmap, in_deals = cells, cm, True
+            continue
+        if in_deals and len(cells) >= len(header) - 2:
+            data_rows.append(cells)
+
+    def cell(cells, key):
+        i = colmap.get(key)
+        return cells[i] if i is not None and i < len(cells) else ""
+
+    first_equity = None
+    deals = []
+    for cells in data_rows:
+        typ = cell(cells, "type").strip().lower()
+        direction = cell(cells, "direction").strip().lower()
+        if typ == "balance":
+            first_equity = _num(cell(cells, "balance"))
+            continue
+        if direction not in ("in", "out", "in/out"):
+            continue
+        deals.append({
+            "time": cell(cells, "time").strip(),
+            "symbol": cell(cells, "symbol").strip(),
+            "type": typ,
+            "direction": direction,
+            "volume": _num(cell(cells, "volume")),
+            "price": cell(cells, "price").replace(" ", "").strip(),
+            "commission": _num(cell(cells, "commission")) or 0.0,
+            "swap": _num(cell(cells, "swap")) or 0.0,
+            "profit": _num(cell(cells, "profit")) or 0.0,
+            "balance": _num(cell(cells, "balance")),
+        })
+
+    open_by_symbol: dict[str, list] = {}
+    trades = []
+    no = 0
+    for d in deals:
+        if d["direction"] == "in":
+            open_by_symbol.setdefault(d["symbol"], []).append(d)
+        else:  # out / in-out -> close the oldest open of that symbol
+            q = open_by_symbol.get(d["symbol"]) or []
+            if not q:
+                continue
+            o = q.pop(0)
+            no += 1
+            commission = round((o["commission"] or 0) + (d["commission"] or 0), 2)
+            swap = round((o["swap"] or 0) + (d["swap"] or 0), 2)
+            profit_net = round((d["profit"] or 0) + swap + commission, 2)
+            trades.append({
+                "no": no, "symbol": d["symbol"], "type": o["type"], "lot": o["volume"],
+                "entry_time": o["time"], "exit_time": d["time"],
+                "entry_price": o["price"], "exit_price": d["price"],
+                "profit": profit_net, "commission": commission, "swap": swap,
+                "balance": d["balance"],
+            })
+
+    return {
+        "first_equity": first_equity,
+        "symbol": trades[0]["symbol"] if trades else None,
+        "trades": trades,
+    }
+
+
 def parse_optimization_xml(path: str, top_n: int = 10) -> dict:
     tree = etree.parse(path)
     header: list[str] | None = None
